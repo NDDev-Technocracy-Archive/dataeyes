@@ -1,0 +1,30 @@
+# Repo-level ignores. Canonical Python rules live in model-bench/.gitignore.
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Secrets — NEVER commit (matches .env at any depth)
+.env
+
+# Confidential vendor source data (internal supplier coefficients / margin basis)
+*.xlsx
+Dataeyes model price list.xlsx
+
+# Agent tooling cache / runtime state (kept local; not source)
+.serena/
+
+# Python (defense-in-depth)
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Benchmark runtime outputs (any depth)
+generated/
+artifacts/
