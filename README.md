@@ -1,5 +1,9 @@
 # dataeyes
 
+> **DEPRECATED.** This repository is archived and no longer maintained.
+> It is kept read-only for reference; its GDS anchor records
+> `lifecycle: archived` under `portfolio:archived-projects`.
+
 Монорепозиторий для бенчмаркинга frontier-LLM, доступных через **DataEyes** OpenAI-compatible API, и сопутствующих документов.
 
 [![CI](https://github.com/rldyourmnd/dataeyes/actions/workflows/ci.yml/badge.svg)](https://github.com/rldyourmnd/dataeyes/actions/workflows/ci.yml)
