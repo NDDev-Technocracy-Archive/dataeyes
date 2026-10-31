@@ -1,53 +1,112 @@
-name: CI
+name: ci
 
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # Obsolete pull-request heads are cancelled; a running main validation always completes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  python-3-11:
-    name: python (3.11)
-    uses: NDDev-it-com/ci-workflows/.github/workflows/python-ci.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
-    with:
-      python_version: '3.11'
-      working_directory: model-bench
-      install_command: 'uv pip install --system -e ".[dev]"'
-      test_command: 'ruff check src tests && ruff format --check src tests && pytest -q'
+  python-311:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.5'
+          enable-cache: 'false'
+      - name: Install and check
+        working-directory: model-bench
+        run: |
+          uv pip install --system -e ".[dev]"
+          ruff check src tests
+          ruff format --check src tests
+          pytest -q
 
-  python-3-12:
-    name: python (3.12)
-    uses: NDDev-it-com/ci-workflows/.github/workflows/python-ci.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
-    with:
-      python_version: '3.12'
-      working_directory: model-bench
-      install_command: 'uv pip install --system -e ".[dev]"'
-      test_command: 'ruff check src tests && ruff format --check src tests && pytest -q'
-
-  codeql:
-    uses: NDDev-it-com/ci-workflows/.github/workflows/public-codeql.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
-    with:
-      languages: '["python","actions"]'
-
-  scorecard:
-    uses: NDDev-it-com/ci-workflows/.github/workflows/public-scorecard.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
-
-  dependency-review:
-    uses: NDDev-it-com/ci-workflows/.github/workflows/public-dependency-review.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
-
-  zizmor:
-    uses: NDDev-it-com/ci-workflows/.github/workflows/zizmor-sarif.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
-
-  secret-scan:
-    uses: NDDev-it-com/ci-workflows/.github/workflows/secret-scan.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
-
-  actionlint:
-    uses: NDDev-it-com/ci-workflows/.github/workflows/actionlint.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
+  python-312:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.5'
+          enable-cache: 'false'
+      - name: Install and check
+        working-directory: model-bench
+        run: |
+          uv pip install --system -e ".[dev]"
+          ruff check src tests
+          ruff format --check src tests
+          pytest -q
 
   semgrep:
-    uses: NDDev-it-com/ci-workflows/.github/workflows/semgrep-ci.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.5'
+          enable-cache: 'false'
+      - name: Semgrep rules
+        run: uvx semgrep@1.182.1 scan --error --metrics off --config p/ci
+
+  workflows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/tools@ab62f45b2a3067e5a7425d703f7fd07f1618b72c # nddev-cicd-v0.6.14
+        with:
+          capability: security
+      - name: Lint and audit workflows
+        run: |
+          actionlint
+          zizmor --offline --no-progress .github
+      - name: Scan new pull request commits, or the full history on main
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$BASE" ]; then
+            gitleaks git --no-banner --redact --log-opts="$BASE..$HEAD" .
+          else
+            gitleaks git --no-banner --redact .
+          fi
+
+  gate:
+    needs: [python-311, python-312, semgrep, workflows]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/gate@ab62f45b2a3067e5a7425d703f7fd07f1618b72c # nddev-cicd-v0.6.14
+        with:
+          needs: ${{ toJSON(needs) }}
+          expected: >-
+            {"python-311":"success","python-312":"success","semgrep":"success","workflows":"success"}
