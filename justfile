@@ -16,7 +16,7 @@ check:
 
 # Run the existing mocked and deterministic tests in the prepared environment.
 test:
-    uv run --project model-bench --offline --no-sync pytest -q model-bench/tests --junitxml=ci-reports/python.xml
+    cd model-bench && uv run --offline --no-sync pytest -q tests --junitxml=../ci-reports/python.xml
 
 # Run the complete source and Python component validation.
 verify: check test
