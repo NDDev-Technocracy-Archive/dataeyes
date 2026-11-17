@@ -5,7 +5,7 @@ The application and provider integrations remain inactive. CI runs static checks
 isolated component tests; it does not start the service or make live model requests.
 
 - [Benchmark source and application documentation](model-bench/README.md)
-- [Research documents](dataeyes-docs/)
+- [Research documents](model-bench/docs/)
 
 ## Source and component checks
 
