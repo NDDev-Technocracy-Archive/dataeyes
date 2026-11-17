@@ -22,7 +22,6 @@ jobs:
       hosted-runner: ubuntu-24.04
       python-version: ${{ matrix.python }}
       uv-version: '0.13.5'
-      tools: ruff@0.17.5
       prepare: setup
       recipe: verify
       reports: ci-reports/python.xml

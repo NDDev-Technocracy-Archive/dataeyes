@@ -11,12 +11,12 @@ setup:
 # Check source formatting and lint without installing or executing the application.
 check:
     just --fmt --check
-    ruff check model-bench/src model-bench/tests
-    ruff format --check model-bench/src model-bench/tests
+    uv run --project model-bench --offline --no-sync ruff check model-bench/src model-bench/tests
+    uv run --project model-bench --offline --no-sync ruff format --check model-bench/src model-bench/tests
 
 # Run the existing mocked and deterministic tests in the prepared environment.
 test:
-    uv run --project model-bench --no-sync pytest -q model-bench/tests --junitxml=ci-reports/python.xml
+    uv run --project model-bench --offline --no-sync pytest -q model-bench/tests --junitxml=ci-reports/python.xml
 
 # Run the complete source and Python component validation.
 verify: check test
