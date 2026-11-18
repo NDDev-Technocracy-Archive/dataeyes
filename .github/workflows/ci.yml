@@ -2,111 +2,58 @@ name: ci
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, edited]
   push:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Obsolete pull-request heads are cancelled; a running main validation always completes.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions: {}
 
 jobs:
-  python-311:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.11'
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: '0.13.5'
-          enable-cache: 'false'
-      - name: Install and check
-        working-directory: model-bench
-        run: |
-          uv pip install --system -e ".[dev]"
-          ruff check src tests
-          ruff format --check src tests
-          pytest -q
-
-  python-312:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.12'
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: '0.13.5'
-          enable-cache: 'false'
-      - name: Install and check
-        working-directory: model-bench
-        run: |
-          uv pip install --system -e ".[dev]"
-          ruff check src tests
-          ruff format --check src tests
-          pytest -q
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11.17', '3.12.15']
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@6bd06a55307dccfd7057c1c3260067eb8adc93a1 # v0.6.79
+    permissions:
+      contents: read
+    with:
+      hosted-runner: ubuntu-24.04
+      python-version: ${{ matrix.python }}
+      uv-version: '0.13.5'
+      prepare: setup
+      recipe: verify
+      reports: ci-reports/python.xml
+      timeout-minutes: 20
 
   semgrep:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: '0.13.5'
-          enable-cache: 'false'
-      - name: Semgrep rules
-        run: uvx semgrep@1.182.1 scan --error --metrics off --config p/ci
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@6bd06a55307dccfd7057c1c3260067eb8adc93a1 # v0.6.79
+    permissions:
+      contents: read
+    with:
+      hosted-runner: ubuntu-24.04
+      python-version: '3.11.17'
+      uv-version: '0.13.5'
+      recipe: ci-semgrep
+      timeout-minutes: 15
 
-  workflows:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/tools@c192c6adcf22088abf456635de614d42e8fa3f8d # nddev-cicd-v0.6.20
-        with:
-          capability: security
-      - name: Lint and audit workflows
-        run: |
-          actionlint
-          zizmor --offline --no-progress .github
-      - name: Scan new pull request commits, or the full history on main
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ -n "$BASE" ]; then
-            gitleaks git --no-banner --redact --log-opts="$BASE..$HEAD" .
-          else
-            gitleaks git --no-banner --redact .
-          fi
+  merge-stops:
+    if: github.event_name == 'pull_request'
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/merge-stops.yml@6bd06a55307dccfd7057c1c3260067eb8adc93a1 # v0.6.79
+    permissions:
+      contents: read
 
   gate:
-    needs: [python-311, python-312, semgrep, workflows]
+    needs: [python, semgrep, merge-stops]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
+    permissions: {}
     timeout-minutes: 5
     steps:
-      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/gate@c192c6adcf22088abf456635de614d42e8fa3f8d # nddev-cicd-v0.6.20
-        with:
-          needs: ${{ toJSON(needs) }}
-          expected: >-
-            {"python-311":"success","python-312":"success","semgrep":"success","workflows":"success"}
+      - name: Require every component and security check
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          EXPECTED: >-
+            {"python":"success","semgrep":"success","merge-stops":"${{ github.event_name == 'pull_request' && 'success' || 'skipped' }}"}
+        run: jq -e --argjson want "$EXPECTED" 'map_values(.result) == $want' <<< "$NEEDS"
